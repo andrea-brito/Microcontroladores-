@@ -1,0 +1,449 @@
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*              MODIFICAÇÕES PARA USO COM 12F675                   *
+;*                FEITAS PELO PROF. MARDSON                        *
+;*                    FEVEREIRO DE 2016                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                       NOME DO PROJETO                           *
+;*                           CLIENTE                               *
+;*         DESENVOLVIDO PELA MOSAICO ENGENHARIA E CONSULTORIA      *
+;*   VERSÃO: 1.0                           DATA: 17/06/03          *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     DESCRIÇÃO DO ARQUIVO                        *
+;*-----------------------------------------------------------------*
+;*   MODELO PARA O PIC 12F675                                      *
+;*                                                                 *
+;*                                                                 *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     ARQUIVOS DE DEFINIÇÕES                      *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+#INCLUDE <p12f675.inc>	;ARQUIVO PADRÃO MICROCHIP PARA 12F675
+
+	__CONFIG _BODEN_OFF & _CP_OFF & _PWRTE_ON & _WDT_OFF & _MCLRE_OFF & _INTRC_OSC_NOCLKOUT
+	
+	; _MCLRE_OFF
+	; DESTA FORMA CONFIGURAMOS A PORTA GP3 COMO PORTA DE ENTRADA E SAIDA 
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    PAGINAÇÃO DE MEMÓRIA                         *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;DEFINIÇÃO DE COMANDOS DE USUÁRIO PARA ALTERAÇÃO DA PÁGINA DE MEMÓRIA
+#DEFINE	BANK0	BCF STATUS,RP0	;SETA BANK 0 DE MEMÓRIA
+#DEFINE	BANK1	BSF STATUS,RP0	;SETA BANK 1 DE MAMÓRIA
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                         VARIÁVEIS                               *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DOS NOMES E ENDEREÇOS DE TODAS AS VARIÁVEIS UTILIZADAS 
+; PELO SISTEMA
+
+	CBLOCK	0x20	;ENDEREÇO INICIAL DA MEMÓRIA DE
+					;USUÁRIO
+		W_TEMP		;REGISTRADORES TEMPORÁRIOS PARA USO
+		STATUS_TEMP	;JUNTO ÀS INTERRUPÇÕES
+		CONT
+		CONT1
+		N_BIT
+		RECO_BIT
+		ENTRADA_IR;VARIAVEL QUE GUARDA OS BITS QUE ENTRAM NO INFRARED
+		
+		;NOVAS VARIÁVEIS
+
+	ENDC			;FIM DO BLOCO DE MEMÓRIA
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                        FLAGS INTERNOS                           *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS FLAGS UTILIZADOS PELO SISTEMA
+	
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                         CONSTANTES                              *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODAS AS CONSTANTES UTILIZADAS PELO SISTEMA
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                           ENTRADAS                              *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS PINOS QUE SERÃO UTILIZADOS COMO ENTRADA
+; RECOMENDAMOS TAMBÉM COMENTAR O SIGNIFICADO DE SEUS ESTADOS (0 E 1)
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                           SAÍDAS                                *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS PINOS QUE SERÃO UTILIZADOS COMO SAÍDA
+; RECOMENDAMOS TAMBÉM COMENTAR O SIGNIFICADO DE SEUS ESTADOS (0 E 1)
+	#DEFINE LED GPIO,   GP5 ; LED QUE PISCA EM 100UM
+	#DEFINE BIT_0 GPIO, GP0; DEFININDO BITS DO DISPLAY
+	#DEFINE BIT_1 GPIO, GP2;  BIT_0 (GP0) LSB
+	#DEFINE BIT_2 GPIO, GP4; BIT_3 (GP5) MSB
+	#DEFINE BIT_3 GPIO, GP1
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                       VETOR DE RESET                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+	ORG	0x00			;ENDEREÇO INICIAL DE PROCESSAMENTO
+	GOTO	INICIO
+	
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    INÍCIO DA INTERRUPÇÃO                        *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; ENDEREÇO DE DESVIO DAS INTERRUPÇÕES. A PRIMEIRA TAREFA É SALVAR OS
+; VALORES DE "W" E "STATUS" PARA RECUPERAÇÃO FUTURA
+
+	ORG	0x04			;ENDEREÇO INICIAL DA INTERRUPÇÃO
+	MOVWF	W_TEMP		;COPIA W PARA W_TEMP
+	SWAPF	STATUS,W
+	MOVWF	STATUS_TEMP	;COPIA STATUS PARA STATUS_TEMP
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    ROTINA DE INTERRUPÇÃO                        *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; AQUI SERÁ ESCRITA AS ROTINAS DE RECONHECIMENTO E TRATAMENTO DAS
+; INTERRUPÇÕES
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                 ROTINA DE SAÍDA DA INTERRUPÇÃO                  *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; OS VALORES DE "W" E "STATUS" DEVEM SER RECUPERADOS ANTES DE 
+; RETORNAR DA INTERRUPÇÃO
+
+SAI_INT
+	SWAPF	STATUS_TEMP,W
+	MOVWF	STATUS		;MOVE STATUS_TEMP PARA STATUS
+	SWAPF	W_TEMP,F
+	SWAPF	W_TEMP,W	;MOVE W_TEMP PARA W
+	RETFIE
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*	            	 ROTINAS E SUBROTINAS                      *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; CADA ROTINA OU SUBROTINA DEVE POSSUIR A DESCRIÇÃO DE FUNCIONAMENTO
+; E UM NOME COERENTE ÀS SUAS FUNÇÕES.
+
+SUBROTINA1
+
+
+NOVE
+	BSF BIT_0
+	BCF BIT_1
+	BCF BIT_2
+	BSF BIT_3
+	RETURN
+	
+OITO
+	BCF BIT_0
+	BCF BIT_1
+	BCF BIT_2
+	BSF BIT_3
+	RETURN
+	
+SETE	
+	BSF BIT_0
+	BSF BIT_1
+	BSF BIT_2
+	BCF BIT_3
+	RETURN
+	
+SEIS
+	BCF BIT_0
+	BSF BIT_1
+	BSF BIT_2
+	BCF BIT_3
+	RETURN
+	
+CINCO
+	BSF BIT_0
+	BCF BIT_1
+	BSF BIT_2
+	BCF BIT_3
+	RETURN
+	
+QUATRO
+	BCF BIT_0
+	BCF BIT_1
+	BSF BIT_2
+	BCF BIT_3
+	RETURN
+	
+TRES
+	BSF BIT_0
+	BSF BIT_1
+	BCF BIT_2
+	BCF BIT_3
+	RETURN
+	
+D_DOIS
+	BCF BIT_0
+	BSF BIT_1
+	BCF BIT_2
+	BCF BIT_3
+	RETURN
+	
+D_UM
+	BSF BIT_0
+	BCF BIT_1
+	BCF BIT_2
+	BCF BIT_3
+	RETURN
+	
+ZERO
+	BCF BIT_0
+	BCF BIT_1
+	BCF BIT_2
+	BCF BIT_3
+	RETURN
+DELAY_100
+	
+	MOVLW	.230 ;DEFININDO O VALOR DO TIMER (25*4 CICLOS)
+	MOVWF	TMR0;
+	
+	RETURN
+
+LED_100 ;
+	BSF	LED	;SETA O LED, LIGA
+	CALL	DELAY_100
+	BCF	LED	;CLEAR O LED, DESLIGA
+
+	RETURN
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     INICIO DO PROGRAMA                          *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+	
+INICIO
+	BANK1				;ALTERA PARA O BANCO 1
+	MOVLW	B'00001000' ;CONFIGURA TODAS AS PORTAS DO GPIO (PINOS)
+	MOVWF	TRISIO		;COMO SAÍDAS
+	CLRF	ANSEL 		;DEFINE PORTAS COMO Digital I/O
+	MOVLW	B'00000001'
+	MOVWF	OPTION_REG	;DE FINE OPÇÕES DE OPERAÇÃO
+	MOVLW	B'00000000' ; PRESCALE 1:4 
+	MOVWF	INTCON		;DEFINE OPÇÕES DE INTERRUPÇÕES
+	BANK0				;RETORNA PARA O BANCO
+	MOVLW	B'00000111'
+	MOVWF	CMCON		;DEFINE O MODO DE OPERAÇÃO DO COMPARADOR ANALÓGICO
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     INICIALIZAÇÃO DAS VARIÁVEIS                 *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     ROTINA PRINCIPAL                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+MAIN
+
+	;VERIFICANDO O FALLING EDGE
+UM	
+	BTFSS	GPIO,GP3
+	GOTO	UM
+DOIS
+	BTFSC	GPIO,GP3
+	GOTO	DOIS
+	
+	MOVLW	.6
+	MOVWF	CONT
+TESTE2
+	MOVLW	.130 ;DEFININDO O VALOR DO TIMER (125*4 CICLOS)
+	MOVWF	TMR0; MOVENDO O VALOR DO TIMER PARA TMR0
+	
+L1
+	BTFSS	GPIO,GP3 ; TESTA SE TEM BORDA DE SUBIDA
+	GOTO	TESTE; 
+L2
+	BTFSC	GPIO,GP3;TESTA SE TEM BORDA DE DECIDA
+	GOTO	TEST
+; VERIFICANDO SE O TMR0 ESTOUROU
+TESTE
+	BTFSS	INTCON,T0IF
+	GOTO	TESTE
+	BCF	INTCON,T0IF
+	DECFSZ	CONT 
+	GOTO	TESTE2
+VOLTA	
+	BTFSS	INTCON,T0IF
+	GOTO	L1
+	
+;AJUSTANDO PARA L2
+	
+TEST
+	BTFSS	INTCON,T0IF
+	GOTO	TESTE
+	BCF	INTCON,T0IF
+	DECFSZ	CONT 
+	GOTO	TESTE2
+VOLT	
+	BTFSS	INTCON,T0IF
+	GOTO	L2
+			
+; VARIAVEL QUE DEFINE O NUMERO DE BITS A RECEBER
+	MOVLW	.7
+	MOVWF	N_BIT
+; CRIANDO DALAY DE 1200UMS
+PRIMEIRO	
+;	BTFSS	GPIO,GP3
+;	GOTO	PRIMEIRO
+;SEGUNDO
+;	BTFSC	GPIO,GP3
+;	GOTO	SEGUNDO
+	
+	MOVLW	.3
+	MOVWF	CONT
+T2
+	MOVLW	.105 ;DEFININDO O VALOR DO TIMER (125*4 CICLOS)
+	MOVWF	TMR0; MOVENDO O VALOR DO TIMER PARA TMR0
+	
+L_1
+	BTFSS	GPIO,GP3 ; TESTA SE TEM BORDA DE SUBIDA
+	GOTO	TESTE_1; 
+L_2
+	BTFSC	GPIO,GP3;TESTA SE TEM BORDA DE DECIDA
+	GOTO	TEST_1
+	GOTO	T_900
+; VERIFICANDO SE O TMR0 ESTOUROU
+TESTE_1
+	BTFSS	INTCON,T0IF
+	GOTO	L_1
+	BCF	INTCON,T0IF
+	DECFSZ	CONT
+	GOTO	T2
+	GOTO	MAIN
+VOLTA_1	
+	BTFSS	INTCON,T0IF
+	GOTO	L_1
+	
+;AJUSTANDO PARA L2
+	
+TEST_1
+	BTFSS	INTCON,T0IF
+	GOTO	L_2
+	BCF	INTCON,T0IF
+	DECFSZ	CONT 
+	GOTO	T2
+	GOTO	MAIN
+VOLT_1	
+	BTFSS	INTCON,T0IF
+	GOTO	L_2
+	
+;DEFININDO O TIMER DE 900UMS
+T_900
+	
+TESTE_DOIS
+	MOVLW	.130 ;DEFININDO O VALOR DO TIMER (125*4 CICLOS)
+	MOVWF	TMR0; MOVENDO O VALOR DO TIMER PARA TMR0
+	
+L_UM
+	BTFSS	GPIO,GP3 ; TESTA SE TEM BORDA DE SUBIDA
+	GOTO	TESTE_UM; 
+L_DOIS
+	BTFSC	GPIO,GP3;TESTA SE TEM BORDA DE DECIDA
+	GOTO	TEST_UM
+	GOTO	MAIN
+; VERIFICANDO SE O TMR0 ESTOUROU
+TESTE_UM
+	BTFSS	INTCON,T0IF
+	GOTO	L_UM
+	BCF	INTCON,T0IF
+	GOTO	RECO_BIT ;RECONHECE O BIT 
+VOLTA_UM	
+	BTFSS	INTCON,T0IF
+	GOTO	L_UM
+	
+;AJUSTANDO PARA L2
+	
+TEST_UM
+	BTFSS	INTCON,T0IF
+	GOTO	L_DOIS
+	BCF	INTCON,T0IF
+	 
+	GOTO	TESTE_DOIS
+VOLT_DOIS	
+	BTFSS	INTCON,T0IF
+	GOTO	L_DOIS
+	
+	; testando saida do receptor IR e o valor de deslocamento para
+	;os dados recebidos
+SAIDA_IR
+	BTFSS	GPIO,GP3 ; RECEBENDO BIT 0
+	GOTO	TRATA_UM;RECEBENDO BIT 1
+	GOTO	TRATA_ZERO
+
+TRATA_UM
+	BSF	STATUS,C; COLOCANDO UM NO CARRY
+	RRF	ENTRADA_IR;ROTACIONANDO PARA A DIREITA DO CARRY
+	;DECREMENTANDO O N_BIT
+	DECFSZ	N_BIT
+	GOTO	PRIMEIRO ; SE NÃO RETORNA PARA O TIMER 1200US
+TRATA_ZERO
+	BCF	STATUS,C;COLOCANDO ZERO NO CARRY
+	RRF	ENTRADA_IR
+	DECFSZ	N_BIT
+	GOTO	PRIMEIRO
+;AJUSTANDO O DISPLAY
+	
+	;SE O SINAL FOR MAIOR QUE  NOVE ACENDE O LED 
+	MOVLW	.9
+	SUBWF	ENTRADA_IR,W
+	BTFSS	STATUS,C
+	CALL	LED_100
+	
+	MOVLW	.9
+	SUBWF	ENTRADA_IR,W
+	;VERIFICANDO SE A TECLA APERTADA É 9
+	BTFSC	STATUS,Z
+	CALL	ZERO
+	;VERIFICANDO SE A TECLA APERTADA É 8
+	MOVLW	.8
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	NOVE
+	;VERIFICANDO SE A TECLA APERTADA É 7
+	MOVLW	.7
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	OITO
+	;VERIFICANDO SE A TECLA APERTADA É 6
+	MOVLW	.6
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	SETE
+	;VERIFICANDO SE A TECLA APERTADA É 5
+	MOVLW	.5
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	SEIS
+	;VERIFICANDO SE A TECLA APERTADA É 4
+	MOVLW	.4
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	CINCO
+	;VERIFICANDO SE A TECLA APERTADA É 3
+	MOVLW	.3
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	QUATRO
+	;VERIFICANDO SE A TECLA APERTADA É 2
+	MOVLW	.2
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	TRES
+	;VERIFICANDO SE A TECLA APERTADA É 1
+	MOVLW	.1
+	SUBWF	ENTRADA_IR,W
+	BTFSC	STATUS,Z
+	CALL	D_DOIS
+	
+	CALL	D_UM
+	
+	CALL	ZERO
+	
+	GOTO MAIN
+
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                       FIM DO PROGRAMA                           *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+	END
